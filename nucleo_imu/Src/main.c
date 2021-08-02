@@ -1,8 +1,20 @@
-#include "imu_lib.h"
+#include "main.h"
+#include <nxp_imu.h>
+#include <uart_lib.h>
+I2C_HandleTypeDef hi2c1;
+
+UART_HandleTypeDef huart5;
+UART_HandleTypeDef huart7;
+UART_HandleTypeDef huart2;
+UART_HandleTypeDef huart3;
+
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
-I2C_HandleTypeDef hi2c1;
+static void MX_UART5_Init(void);
+static void MX_UART7_Init(void);
+static void MX_USART2_UART_Init(void);
+static void MX_USART3_UART_Init(void);
 
 int _write(int file, char *ptr, int len) {
 	for(int i = 0; i < len; i++) {
@@ -13,38 +25,53 @@ int _write(int file, char *ptr, int len) {
 
 int main(void)
 {
-	HAL_Init();
+  HAL_Init();
 
-    SystemClock_Config();
+  SystemClock_Config();
 
-    MX_GPIO_Init();
-    MX_I2C1_Init();
+  MX_GPIO_Init();
+  MX_I2C1_Init();
+  MX_UART5_Init();
+  MX_UART7_Init();
+  MX_USART2_UART_Init();
+  MX_USART3_UART_Init();
 
-    struct Sensor_I2C fxas2100c = {.hi2c1 = &hi2c1, .i2c_addr = FXAS2100C_ADDR};
-    struct Sensor_I2C fxos8700 = {.hi2c1 = &hi2c1, .i2c_addr = FXOS8700_ADDR};
-    double gx,gy,gz;
-    double ax,ay,az;
-    double mx,my,mz;
 
-    printf("Configuring Sensors\n");
-    configure_gyroscope(&fxas2100c, 0x02, 0x0E, 0x00, 0x00);
-    configure_accelerometer(&fxos8700, 0x01, 0x15, 0x02, 0x00, 0x00, 0x00);
-    configure_magnetometer(&fxos8700, 0x1F, 0x20, 0x00);
-    HAL_Delay(1000);
-    printf("Done Configuring Sensors\n");
+  struct IMU imu;
+  imu.hi2c = &hi2c1;
 
-    while (1)
-    {
-    	read_gyroscope(&fxas2100c, GYRO_SENSITIVITY_500DPS, &gx, &gy, &gz);
-    	read_accelerometer(&fxos8700, ACCEL_RANGE_4G * GRAVITY_CONST, &ax, &ay, &az);
-    	read_magnetometer(&fxos8700, MAG_TO_uTESLA, &mx, &my, &mz);
+  fxos8700_init( imu.hi2c );
+  fxas21002c_init( imu.hi2c );
 
-    	printf("Gyro Data in DPS	Accel Data in G		Mag Data in uTeslas\n");
-    	printf("GX: %.3f	GY: %.3f	GZ: %.3f\n", gx, gy, gz);
-    	printf("AX: %.3f	AY: %.3f	GZ: %.3f\n", ax, ay, az);
-    	printf("MX: %.3f	MY: %.3f	MZ: %.3f\n", mx, my, mz);
-    	HAL_Delay(1000);
-    }
+  GPIO_PinState interruptG1, interruptG2, interruptA1, interruptA2;
+  while (1)
+  {
+	printf("Reading IMU\n");
+	read_imu( &(imu) );
+
+	interruptG1 = HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_14);
+	interruptG2 = HAL_GPIO_ReadPin(GPIOE, GPIO_PIN_15);
+	interruptA1 = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_10);
+	interruptA2 = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_11);
+
+	if (interruptG1) uart_transmit(&huart5, "Interrupt G1");
+	if (interruptG2) uart_transmit(&huart7, "Interrupt G2");
+	if (interruptA1) uart_transmit(&huart2, "Interrupt A1");
+	if (interruptA2) uart_transmit(&huart3, "Interrupt A2");
+	/*
+	uart_transmit(&huart5, "UART1");
+	uart_transmit(&huart7, "UART2");
+	uart_transmit(&huart2, "UART3");
+	uart_transmit(&huart3, "UART4");
+	*/
+  	printf("Gyro Data in DPS	Accel Data in G		Mag Data in uTeslas\n");
+  	printf("GX: %.3f	GY: %.3f	GZ: %.3f\n", imu.gyro.x, imu.gyro.y, imu.gyro.z);
+  	printf("AX: %.3f	AY: %.3f	GZ: %.3f\n", imu.accel.x, imu.accel.y, imu.accel.z);
+  	printf("MX: %.3f	MY: %.3f	MZ: %.3f\n", imu.mag.x, imu.mag.y, imu.mag.z);
+
+  	HAL_Delay(2000);
+  }
+
 }
 
 void SystemClock_Config(void)
@@ -53,7 +80,10 @@ void SystemClock_Config(void)
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
   __HAL_RCC_PWR_CLK_ENABLE();
-  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE3);
+  /** Initializes the RCC Oscillators according to the specified parameters
+  * in the RCC_OscInitTypeDef structure.
+  */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
@@ -62,6 +92,8 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+  /** Initializes the CPU, AHB and APB buses clocks
+  */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
@@ -78,6 +110,7 @@ void SystemClock_Config(void)
 static void MX_I2C1_Init(void)
 {
 
+
   hi2c1.Instance = I2C1;
   hi2c1.Init.ClockSpeed = 100000;
   hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
@@ -91,28 +124,152 @@ static void MX_I2C1_Init(void)
   {
     Error_Handler();
   }
+  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+}
+
+static void MX_UART5_Init(void)
+{
+
+  huart5.Instance = UART5;
+  huart5.Init.BaudRate = 115200;
+  huart5.Init.WordLength = UART_WORDLENGTH_8B;
+  huart5.Init.StopBits = UART_STOPBITS_1;
+  huart5.Init.Parity = UART_PARITY_NONE;
+  huart5.Init.Mode = UART_MODE_TX_RX;
+  huart5.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart5.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart5) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+}
+
+static void MX_UART7_Init(void)
+{
+
+  huart7.Instance = UART7;
+  huart7.Init.BaudRate = 115200;
+  huart7.Init.WordLength = UART_WORDLENGTH_8B;
+  huart7.Init.StopBits = UART_STOPBITS_1;
+  huart7.Init.Parity = UART_PARITY_NONE;
+  huart7.Init.Mode = UART_MODE_TX_RX;
+  huart7.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart7.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart7) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+}
+
+static void MX_USART2_UART_Init(void)
+{
+
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 115200;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+}
+
+static void MX_USART3_UART_Init(void)
+{
+
+  huart3.Instance = USART3;
+  huart3.Init.BaudRate = 115200;
+  huart3.Init.WordLength = UART_WORDLENGTH_8B;
+  huart3.Init.StopBits = UART_STOPBITS_1;
+  huart3.Init.Parity = UART_PARITY_NONE;
+  huart3.Init.Mode = UART_MODE_TX_RX;
+  huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart3.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart3) != HAL_OK)
+  {
+    Error_Handler();
+  }
 
 }
 
 static void MX_GPIO_Init(void)
 {
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
 
-  __HAL_RCC_GPIOA_CLK_ENABLE();
+  /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOF_CLK_ENABLE();
+  __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6, GPIO_PIN_RESET);
+
+  /*Configure GPIO pins : PE14 PE15 */
+  GPIO_InitStruct.Pin = GPIO_PIN_14|GPIO_PIN_15|GPIO_PIN_13;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PB10 PB11 */
+  GPIO_InitStruct.Pin = GPIO_PIN_10|GPIO_PIN_11;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PC6 */
+  GPIO_InitStruct.Pin = GPIO_PIN_6;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
 }
 
 
 void Error_Handler(void)
 {
+  /* USER CODE BEGIN Error_Handler_Debug */
+  /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
   while (1)
   {
   }
+  /* USER CODE END Error_Handler_Debug */
 }
 
 #ifdef  USE_FULL_ASSERT
+/**
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
+  * @retval None
+  */
 void assert_failed(uint8_t *file, uint32_t line)
 {
+  /* USER CODE BEGIN 6 */
+  /* User can add his own implementation to report the file name and line number,
+     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  /* USER CODE END 6 */
 }
-#endif
+#endif /* USE_FULL_ASSERT */
+
+/************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/

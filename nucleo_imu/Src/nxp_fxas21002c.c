@@ -1,11 +1,33 @@
 #include <nxp_fxas21002c.h>
 
+void fxas21002_interrupt_setup(I2C_HandleTypeDef* hi2c1)
+{
+	HAL_StatusTypeDef ret[5];
+	ret[0] = i2c_transmit(hi2c1, FXAS21002C_ADDRESS, 0x0E, 0x07);
+	ret[1] = i2c_transmit(hi2c1, FXAS21002C_ADDRESS, 0x10, 0x40);
+	ret[2] = i2c_transmit(hi2c1, FXAS21002C_ADDRESS, 0x14, 0x34);
+	if (ret[0] == ret[1] == ret[2] == HAL_OK) printf("Interrupt init went well with FXAS21002C\n");
+	/*
+	ret[0] = i2c_transmit(hi2c1, FXOS8700_ADDRESS, FXOS8700_REGISTER_CTRL_REG5, 0x01);
+	//ret[1] = i2c_transmit(hi2c1, FXOS8700_ADDRESS, 0x0A, 0x18); //modifies TRIG_CFG to have 0x18
+	ret[1] = i2c_transmit(hi2c1, FXOS8700_ADDRESS, 0x23, 0x40);
+	ret[2] = i2c_transmit(hi2c1, FXOS8700_ADDRESS, 0x24, 0x40);
+	ret[3] = i2c_transmit(hi2c1, FXOS8700_ADDRESS, 0x25, 0x40);
+	ret[4] = i2c_transmit(hi2c1, FXOS8700_ADDRESS, 0x26, 0xA2);
+
+	ret[5] = i2c_transmit(hi2c1, FXOS8700_ADDRESS, 0x11, 0xC0);
+	ret[6] = i2c_transmit(hi2c1, FXOS8700_ADDRESS, 0x14, 0x78);
+	if (ret[0] == ret[1] == ret[2] == ret[3] == ret[4] == ret[5] == ret[6] == HAL_OK) printf("Interrupt init went well with FXOS8700\n");
+	*/
+}
+
 void fxas21002c_init(I2C_HandleTypeDef* hi2c1)
 {
 	//this is set to 250 dps
 	HAL_StatusTypeDef ret[4];
 	printf("Setting up FXAS21002C\n");
 	ret[0] = i2c_transmit(hi2c1, FXAS21002C_ADDRESS, GYRO_REGISTER_CTRL_REG1, 0x00); //standby
+	fxas21002_interrupt_setup(hi2c1);
 	ret[1] = i2c_transmit(hi2c1, FXAS21002C_ADDRESS, GYRO_REGISTER_CTRL_REG1, 1 << 6); //reset
 	ret[2] = i2c_transmit(hi2c1, FXAS21002C_ADDRESS, GYRO_REGISTER_CTRL_REG0, 0x03); //set sensitivity
 	ret[3] = i2c_transmit(hi2c1, FXAS21002C_ADDRESS, GYRO_REGISTER_CTRL_REG1, 0x0E); //active

@@ -1,5 +1,20 @@
 #include <nxp_fxos8700.h>
 
+void fxos8700_interrupt_setup(I2C_HandleTypeDef* hi2c1)
+{
+	HAL_StatusTypeDef ret[5];
+	ret[0] = i2c_transmit(hi2c1, FXOS8700_ADDRESS, FXOS8700_REGISTER_CTRL_REG5, 0x01);
+	//ret[1] = i2c_transmit(hi2c1, FXOS8700_ADDRESS, 0x0A, 0x18); //modifies TRIG_CFG to have 0x18
+	ret[1] = i2c_transmit(hi2c1, FXOS8700_ADDRESS, 0x23, 0x40);
+	ret[2] = i2c_transmit(hi2c1, FXOS8700_ADDRESS, 0x24, 0x40);
+	ret[3] = i2c_transmit(hi2c1, FXOS8700_ADDRESS, 0x25, 0x40);
+	ret[4] = i2c_transmit(hi2c1, FXOS8700_ADDRESS, 0x26, 0xA2);
+
+	ret[5] = i2c_transmit(hi2c1, FXOS8700_ADDRESS, 0x11, 0xC0);
+	ret[6] = i2c_transmit(hi2c1, FXOS8700_ADDRESS, 0x14, 0x78);
+	if (ret[0] == ret[1] == ret[2] == ret[3] == ret[4] == ret[5] == ret[6] == HAL_OK) printf("Interrupt init went well with FXOS8700\n");
+}
+
 void fxos8700_init(I2C_HandleTypeDef* hi2c1)
 {
 	printf("Setting up FXOS8700\n");
@@ -7,6 +22,9 @@ void fxos8700_init(I2C_HandleTypeDef* hi2c1)
 	/* Set to standby mode (required to make changes to this register) */
 	ret[0] = i2c_transmit(hi2c1, FXOS8700_ADDRESS, FXOS8700_REGISTER_CTRL_REG1, 0x00);
 	/* High resolution */
+
+	fxos8700_interrupt_setup(hi2c1);
+
 	ret[1] = i2c_transmit(hi2c1, FXOS8700_ADDRESS, FXOS8700_REGISTER_CTRL_REG2, 0x02);
 	/* Active, Normal Mode, Low Noise, 100Hz in Hybrid Mode */
 	ret[2] = i2c_transmit(hi2c1, FXOS8700_ADDRESS, FXOS8700_REGISTER_CTRL_REG1, 0x15);
